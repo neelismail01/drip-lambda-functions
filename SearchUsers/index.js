@@ -21,63 +21,168 @@ exports.handler = async (event, context) => {
   context.callbackWaitsForEmptyEventLoop = false;
 
   const db = await connectToDatabase();
-
-  const orders = await db.collection("orders").aggregate([
+  
+  const query = event['params']['query']['searchTerm'];
+  const userId = event['params']['path']['userId']
+  
+  const userFriends = await db.collections('friends').aggregate([
     {
-        $match: {
-            'user': ObjectId(event.params.path.userId)
-        }
+      $match: {
+        $or: [
+          {
+            recipient: ObjectId(userId),
+          },
+          {
+            requester: ObjectId(userId),
+          },
+        ],
+      },
     },
     {
-        $lookup: {
-            'from': 'orderitems',
-            'localField': 'orderItems',
-            'foreignField': '_id',
-            'as': 'orderItems',
-        }
+      $lookup: {
+        from: 'users',
+        localField: 'requester',
+        foreignField: '_id',
+        as: 'requester',
+      },
     },
     {
-        $lookup: {
-            'from': 'products',
-            'localField': 'orderItems.product',
-            'foreignField': '_id',
-            'as': 'orderItems.product',
-        }
+      $lookup: {
+        from: 'users',
+        localField: 'recipient',
+        foreignField: '_id',
+        as: 'recipient',
+      },
     },
     {
-        $lookup: {
-            'from': 'users',
-            'localField': 'user',
-            'foreignField': '_id',
-            'as': 'user',
-        }
-    },
+      $match: {
+          $or: [
+            {
+              $and: [
+                {
+                  'requester._id': { $ne: ObjectId(userId) },
+                },
+                {
+                  $or: [
+                    {
+                      'requester.name': {
+                        $regex: new RegExp(query, 'i'),
+                      },
+                    },
+                    {
+                      'requester.email': {
+                        $regex: new RegExp(query, 'i'),
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+            {
+              $and: [
+                {
+                  'recipient._id': { $ne: ObjectId(userId) },
+                },
+                {
+                  $or: [
+                    {
+                      'recipient.name': {
+                        $regex: new RegExp(query, 'i'),
+                      },
+                    },
+                    {
+                      'recipient.email': {
+                        $regex: new RegExp(query, 'i'),
+                      },
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      },
+      {
+        $project: {
+          requester: { $arrayElemAt: ['$requester', 0] },
+          recipient: { $arrayElemAt: ['$recipient', 0] },
+          status: 1,
+        },
+      },
+      {
+        $limit: 10,
+      },
+  ])
+  .toArray()
+  
+  
+  const userMatches = await db.collections('users').aggregate([
     {
-        $lookup: {
-            'from': 'businesses',
-            'localField': 'business',
-            'foreignField': '_id',
-            'as': 'business',
-        }
-    },
-    {
-        $sort: {
-            'dateOrdered': -1
-        }
+      $match: {
+        $and: [
+          {
+            '_id': { $ne: ObjectId(userId) },
+          },
+          {
+            $or: [
+              {
+                name: { $regex: new RegExp(query, 'i') },
+              },
+              {
+                email: { $regex: new RegExp(query, 'i') },
+              },
+            ]
+          },
+        ],
+      },
     },
     {
       $project: {
-        'business': { $arrayElemAt: ['$business', 0] },
-        'user': { $arrayElemAt: ['$user', 0] },
-        'orderItems.product': { $arrayElemAt: ['$orderItems.product', 0] },
+        name: 1,
+        email: 1,
       },
+    },
+    {
+      $limit: 5,
     }
   ])
-  .toArray();
+  .toArray()
+
+  const friends = [];
+  const friendRequests = [];
+  const newUsers = [];
+  const passedFriendsCheck = true;
+
+    for (let i = 0; i < userMatches.length; i++) {
+      for (let j = 0; j < userFriends.length; j++) {
+        const friendshipStatus = userFriends[j].status;
+        const isFriendshipRecipient = String(userMatches[i]._id) === String(userFriends[j].requester._id);
+        const isFriendshipRequester = String(userMatches[i]._id) === String(userFriends[j].recipient._id)
+          
+        if (friendshipStatus === "friends" && (isFriendshipRequester || isFriendshipRecipient)) {
+          friends.push(userFriends[j]);
+          passedFriendsCheck = false;
+        } else if (isFriendshipRecipient) {
+          friendRequests.push(userFriends[j]);
+          passedFriendsCheck = false;
+        } else if (isFriendshipRequester) {
+          passedFriendsCheck = false;
+        }
+      }
+
+      if (passedFriendsCheck) {
+        newUsers.push(userMatches[i]);
+      }
+      passedFriendsCheck = true;
+    }
 
   const response = {
     statusCode: 200,
-    body: orders,
+    body: {
+      friends,
+      friendRequests,
+      newUsers
+    }
   };
 
   return response;
