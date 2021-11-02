@@ -1,46 +1,80 @@
-const MongoClient = require("mongodb").MongoClient;
-const ObjectId = require("mongodb").ObjectId
-const bcrypt = require("bcryptjs")
+const { MongoClient } = require('mongodb');
+const bcrypt = require('bcrypt');
+const aws = require('aws-sdk');
+const jwt = require('jsonwebtoken');
 
-const CONNECTION_STRING = "mongodb+srv://nikhil-ismail:nikhil2002@cluster0.ookje.mongodb.net/eshop-database?retryWrites=true&w=majority";
+aws.config.loadFromPath('./config.json');
 
+const ssm = new aws.SSM({
+  apiVersion: "2014-11-06",
+  region: "us-east-2",
+});
+
+const getParams = async (param) => {
+  const request = await ssm
+      .getParameter({
+          Name: param,
+      })
+      .promise();
+
+  return request.Parameter.Value;
+};
+
+let mongodbUri = null;
 let cachedDb = null;
+let accessTokenSecret = null;
 
 async function connectToDatabase() {
   if (cachedDb) {
     return cachedDb;
   }
 
-  const client = await MongoClient.connect(CONNECTION_STRING);
-  const db = client.db("eshop-database");
+  mongodbUri = await getParams('connection-uri-mongodb');
+  const client = await MongoClient.connect(mongodbUri);
+
+  const db = client.db('eshop-database');
 
   cachedDb = db;
   return db;
 }
 
 exports.handler = async (event, context) => {
-  context.callbackWaitsForEmptyEventLoop = false;
 
-  const db = await connectToDatabase();
+  try {
+    context.callbackWaitsForEmptyEventLoop = false;
   
-  const userEmail = event['body-json']['email']
-  const userPassword = event['body-json']['password']
+    const db = await connectToDatabase();
+    
+    const userEmail = event['body-json']['email'];
+    const userPassword = event['body-json']['password']
   
-  const user = await db.collections('users').findOne({ email: userEmail })
-  
-  let response = {}
-  
-  if (user && bcrypt.compareSync(userPassword, user.passwordHash)) {
-    response = {
-      statusCode: 200,
-      body: { userInfo: user }
+    const userExists = await db.collection('users').find({ email: userEmail }).toArray();
+    
+    if (userExists.length > 0 && bcrypt.compareSync(userPassword, userExists[0].passwordHash)) {
+
+      if (accessTokenSecret === null) {
+        accessTokenSecret = await getParams('access-token-secret-jwt');
+      }
+
+      const accessToken = jwt.sign(userEmail, accessTokenSecret);
+
+      return {
+        statusCode: 200,
+        body: { accessToken: accessToken }
+      }
     }
-  } else {
-    response = {
-      statusCode: 401,
-      body: "Incorrect password"
+  
+    return {
+      statusCode: 400,
+      body: "The provided login credentials do not match any registered users."
+    };
+    
+  } catch (err) {
+    
+    return {
+      statusCode: 500,
+      body: "An error occurred while validating login credentials."
     }
+
   }
-
-  return response;
 };
