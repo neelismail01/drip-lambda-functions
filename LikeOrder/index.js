@@ -98,7 +98,7 @@ exports.handler = async (event, context) => {
 
     return {
       statusCode: 500,
-      body: "An error occurred while collecting your friend's orders.",
+      body: "An error occurred while liking/unliking your friend's order.",
     };
 
   }
