@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const bcrypt = require('bcrypt');
 const aws = require('aws-sdk');
 const jwt = require('jsonwebtoken');
@@ -56,7 +56,7 @@ exports.handler = async (event, context) => {
         accessTokenSecret = await getParams('access-token-secret-jwt');
       }
 
-      const accessToken = jwt.sign(userEmail, accessTokenSecret);
+      const accessToken = jwt.sign(ObjectId(userExists[0]['_id']).toString(), accessTokenSecret);
 
       return {
         statusCode: 200,
