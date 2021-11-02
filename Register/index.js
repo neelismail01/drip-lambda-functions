@@ -1,4 +1,4 @@
-const { MongoClient } = require('mongodb');
+const { MongoClient, ObjectId } = require('mongodb');
 const bcrypt = require('bcrypt');
 const aws = require('aws-sdk');
 const jwt = require('jsonwebtoken');
@@ -60,19 +60,19 @@ exports.handler = async (event, context) => {
       }
     }
     
-    await db.collection('users').insertOne({
+    const user = await db.collection('users').insertOne({
       email: userEmail,
       name: userName,
       addresses: userAddress,
       activeAddress: userActiveAddress,
       password: bcrypt.hashSync(userPassword, 10)
-    })
+    });
 
     if (accessTokenSecret === null) {
       accessTokenSecret = await getParams('access-token-secret-jwt');
     }
 
-    const accessToken = jwt.sign(userEmail, accessTokenSecret);
+    const accessToken = jwt.sign(ObjectId(user.insertedId).toString(), accessTokenSecret);
   
     return {
       statusCode: 200,
