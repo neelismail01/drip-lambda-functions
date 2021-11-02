@@ -1,67 +1,90 @@
-const MongoClient = require("mongodb").MongoClient;
-const ObjectId = require("mongodb").ObjectId;
-const bcrypt = require("bcryptjs");
+const { MongoClient } = require('mongodb');
+const bcrypt = require('bcrypt');
+const aws = require('aws-sdk');
+const jwt = require('jsonwebtoken');
 
-const CONNECTION_STRING = "mongodb+srv://nikhil-ismail:nikhil2002@cluster0.ookje.mongodb.net/eshop-database?retryWrites=true&w=majority";
+aws.config.loadFromPath('./config.json');
 
+const ssm = new aws.SSM({
+  apiVersion: "2014-11-06",
+  region: "us-east-2",
+});
+
+const getParams = async (param) => {
+  const request = await ssm
+      .getParameter({
+          Name: param,
+      })
+      .promise();
+
+  return request.Parameter.Value;
+};
+
+let mongodbUri = null;
 let cachedDb = null;
+let accessTokenSecret = null;
 
 async function connectToDatabase() {
   if (cachedDb) {
     return cachedDb;
   }
 
-  const client = await MongoClient.connect(CONNECTION_STRING);
-  const db = client.db("eshop-database");
+  mongodbUri = await getParams('connection-uri-mongodb');
+  const client = await MongoClient.connect(mongodbUri);
+
+  const db = client.db('eshop-database');
 
   cachedDb = db;
   return db;
 }
 
 exports.handler = async (event, context) => {
-  context.callbackWaitsForEmptyEventLoop = false;
 
-  const db = await connectToDatabase();
-
-  const userEmail = event['params']['path']['email']
-
-  const userExists = await db.collections('users').findOne({ email: userEmail })
+  try {
+    context.callbackWaitsForEmptyEventLoop = false;
   
-  const response = {}
+    const db = await connectToDatabase();
+    
+    const userEmail = event['body-json']['email'];
+    const userName = event['body-json']['name'];
+    const userAddress = event['body-json']['address'];
+    const userActiveAddress = event['body-json']['activeAddress'];
+    const userPassword = event['body-json']['password']
   
-  if (userExists) {
-    response = {
-      statusCode: 400,
-      body: "A user with this email already exists",
+    const userExists = await db.collection('users').find({ email: userEmail }).toArray();
+    
+    if (userExists.length > 0) {
+      return {
+        statusCode: 400,
+        body: "A user with this email already exists."
+      }
     }
-  }
-  
-  const userData = {
-    name: event['body-json']['name'],
-    email: event['body-json']['email'],
-    address: {
-      fullAddress: event['body-json']['name'],
-      addressPrimaryText: event['body-json']['addressPrimaryText'],
-      addressSecondaryText: event['body-json']['addressSecondaryText'],
-      addressPlaceId: event['body-json']['addressPlaceId'],
-      active: true
-    },
-    passwordHash: bcrypt.hashSync(event['body-json']['password'], 10)
-  }
-  
-  const user = await db.collections('users').insertOne(userData)
+    
+    await db.collection('users').insertOne({
+      email: userEmail,
+      name: userName,
+      addresses: userAddress,
+      activeAddress: userActiveAddress,
+      password: bcrypt.hashSync(userPassword, 10)
+    })
 
-  if (!user) {
-    response = {
-      statusCode: 400,
-      body: "This user cannot be created",
+    if (accessTokenSecret === null) {
+      accessTokenSecret = await getParams('access-token-secret-jwt');
     }
-  }
 
-  response = {
-    statusCode: 200,
-    body: { userInfo: user }
-  }
+    const accessToken = jwt.sign(userEmail, accessTokenSecret);
+  
+    return {
+      statusCode: 200,
+      body: { accessToken: accessToken }
+    };
+    
+  } catch (err) {
+    
+    return {
+      statusCode: 500,
+      body: "An error occurred while creating your account."
+    }
 
-  return response;
+  }
 };
