@@ -1,84 +1,118 @@
-const MongoClient = require("mongodb").MongoClient;
-const ObjectId = require("mongodb").ObjectId
+const { MongoClient, ObjectId } = require("mongodb");
+const aws = require("aws-sdk");
+const jwt = require("jsonwebtoken");
 
-const CONNECTION_STRING = "mongodb+srv://nikhil-ismail:nikhil2002@cluster0.ookje.mongodb.net/eshop-database?retryWrites=true&w=majority";
+aws.config.loadFromPath("./config.json");
 
+const ssm = new aws.SSM({
+  apiVersion: "2014-11-06",
+  region: "us-east-2",
+});
+
+const getParams = async (param) => {
+  const request = await ssm
+    .getParameter({
+      Name: param,
+    })
+    .promise();
+
+  return request.Parameter.Value;
+};
+
+let mongodbUri = null;
 let cachedDb = null;
+let accessTokenSecret = null;
 
 async function connectToDatabase() {
   if (cachedDb) {
     return cachedDb;
   }
 
-  const client = await MongoClient.connect(CONNECTION_STRING);
-  const db = client.db("eshop-database");
+  mongodbUri = await getParams("connection-uri-mongodb");
+  const client = await MongoClient.connect(mongodbUri);
+
+  const db = client.db("drip-beta-db");
 
   cachedDb = db;
   return db;
 }
 
 exports.handler = async (event, context) => {
-  context.callbackWaitsForEmptyEventLoop = false;
 
-  const db = await connectToDatabase();
+  try {
 
-  const orders = await db.collection("orders").aggregate([
-    {
-        $match: {
-            'user': ObjectId(event.params.path.userId)
-        }
-    },
-    {
-        $lookup: {
-            'from': 'orderitems',
-            'localField': 'orderItems',
-            'foreignField': '_id',
-            'as': 'orderItems',
-        }
-    },
-    {
-        $lookup: {
-            'from': 'products',
-            'localField': 'orderItems.product',
-            'foreignField': '_id',
-            'as': 'orderItems.product',
-        }
-    },
-    {
-        $lookup: {
-            'from': 'users',
-            'localField': 'user',
-            'foreignField': '_id',
-            'as': 'user',
-        }
-    },
-    {
-        $lookup: {
-            'from': 'businesses',
-            'localField': 'business',
-            'foreignField': '_id',
-            'as': 'business',
-        }
-    },
-    {
-        $sort: {
-            'dateOrdered': -1
-        }
-    },
-    {
-      $project: {
-        'business': { $arrayElemAt: ['$business', 0] },
-        'user': { $arrayElemAt: ['$user', 0] },
-        'orderItems.product': { $arrayElemAt: ['$orderItems.product', 0] },
-      },
+    context.callbackWaitsForEmptyEventLoop = false;
+
+    const authHeader = event['params']['header']['Authorization'];
+    const authToken = authHeader && authHeader.split(" ")[1];
+    let userId = null;
+
+    if (authToken === null) {
+      return {
+        status: 401,
+        body: "You do not have an authorization token."
+      }
     }
-  ])
-  .toArray();
 
-  const response = {
-    statusCode: 200,
-    body: orders,
-  };
+    if (accessTokenSecret === null) {
+      accessTokenSecret = await getParams('access-token-secret-jwt');
+    }
 
-  return response;
+    jwt.verify(authToken, accessTokenSecret, (err, user) => {
+      if (err) {
+        return {
+          status: 403,
+          body: "You do not have a valid authorization token."
+        }
+      }
+
+      userId = event['params']['path']['userId'];
+    })
+
+    const db = await connectToDatabase();
+    const orders = await db.collection('orders').aggregate([
+      {
+          $match: {
+              user: ObjectId(userId)
+          }
+      },
+      {
+          $lookup: {
+              from: 'users',
+              localField: 'user',
+              foreignField: '_id',
+              as: 'user',
+          }
+      },
+      {
+          $sort: {
+              dateOrdered: -1
+          }
+      },
+      {
+        $project: {
+          user: { $arrayElemAt: ['$user', 0] },
+          orderItems: 1,
+          dateOrdered: 1,
+          likedBy: 1,
+          totalPrice: 1,
+          totalQuantity: 1
+        }
+      }
+    ])
+    .toArray();
+  
+    return {
+      statusCode: 200,
+      body: orders
+    };
+
+  } catch (err) {
+
+    console.log(err);
+    return {
+      status: 500,
+      body: "An error occurred while getting this user's orders."
+    }
+  }
 };

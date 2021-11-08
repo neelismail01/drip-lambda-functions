@@ -32,7 +32,7 @@ async function connectToDatabase() {
   mongodbUri = await getParams('connection-uri-mongodb');
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db('eshop-database');
+  const db = client.db('drip-beta-db');
 
   cachedDb = db;
   return db;
@@ -60,7 +60,14 @@ exports.handler = async (event, context) => {
 
       return {
         statusCode: 200,
-        body: { accessToken: accessToken }
+        body: {
+          accessToken: accessToken,
+          userInfo: {
+            _id: ObjectId(userExists[0]['_id']).toString(),
+            name: userExists[0]['name'],
+            email: userExists[0]['email']
+          }
+        }
       }
     }
   
@@ -71,6 +78,7 @@ exports.handler = async (event, context) => {
     
   } catch (err) {
     
+    console.log(err);
     return {
       statusCode: 500,
       body: "An error occurred while validating login credentials."

@@ -32,7 +32,7 @@ async function connectToDatabase() {
   mongodbUri = await getParams('connection-uri-mongodb');
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db('eshop-database');
+  const db = client.db('drip-beta-db');
 
   cachedDb = db;
   return db;
@@ -47,8 +47,6 @@ exports.handler = async (event, context) => {
     
     const userEmail = event['body-json']['email'];
     const userName = event['body-json']['name'];
-    const userAddress = event['body-json']['address'];
-    const userActiveAddress = event['body-json']['activeAddress'];
     const userPassword = event['body-json']['password']
   
     const userExists = await db.collection('users').find({ email: userEmail }).toArray();
@@ -63,9 +61,7 @@ exports.handler = async (event, context) => {
     const user = await db.collection('users').insertOne({
       email: userEmail,
       name: userName,
-      addresses: userAddress,
-      activeAddress: userActiveAddress,
-      password: bcrypt.hashSync(userPassword, 10)
+      passwordHash: bcrypt.hashSync(userPassword, 10)
     });
 
     if (accessTokenSecret === null) {
@@ -76,11 +72,19 @@ exports.handler = async (event, context) => {
   
     return {
       statusCode: 200,
-      body: { accessToken: accessToken }
+      body: {
+        accessToken: accessToken,
+        userInfo: {
+          _id: ObjectId(user.insertedId).toString(),
+          name: userName,
+          email: userEmail
+        }
+      }
     };
     
   } catch (err) {
     
+    console.log(err);
     return {
       statusCode: 500,
       body: "An error occurred while creating your account."

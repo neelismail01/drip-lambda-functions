@@ -31,14 +31,16 @@ async function connectToDatabase() {
   mongodbUri = await getParams("connection-uri-mongodb");
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db("eshop-database");
+  const db = client.db("drip-beta-db");
 
   cachedDb = db;
   return db;
 }
 
 exports.handler = async (event, context) => {
+
   try {
+
     context.callbackWaitsForEmptyEventLoop = false;
 
     const authHeader = event["params"]["header"]["Authorization"];
@@ -48,7 +50,7 @@ exports.handler = async (event, context) => {
     if (authToken === null) {
       return {
         status: 401,
-        body: "You do not have an authorization token",
+        body: "You do not have an authorization token.",
       };
     }
 
@@ -69,100 +71,85 @@ exports.handler = async (event, context) => {
 
     const db = await connectToDatabase();
 
-    const friends = await db
-      .collection("friends")
-      .aggregate([
-        {
-          $match: {
-            $and: [
-              {
-                $or: [
-                  {
-                    requester: ObjectId(userId),
-                  },
-                  {
-                    recipient: ObjectId(userId),
-                  },
-                ],
-              },
-              {
-                status: "friends",
-              },
-            ],
-          },
-        },
-        {
-          $project: {
-            _id: 0,
-            friendId: {
-              $cond: {
-                if: {
-                  $eq: ["$requester", ObjectId(userId)],
+    const friends = await db.collection('friends').aggregate([
+      {
+        $match: {
+          $and: [
+            {
+              $or: [
+                {
+                  requester: ObjectId(userId),
                 },
-                then: "$recipient",
-                else: "$requester",
+                {
+                  recipient: ObjectId(userId),
+                },
+              ],
+            },
+            {
+              status: "friends",
+            },
+          ],
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          friendId: {
+            $cond: {
+              if: {
+                $eq: ["$requester", ObjectId(userId)],
               },
+              then: "$recipient",
+              else: "$requester",
             },
           },
         },
-      ])
-      .toArray();
+      },
+    ])
+    .toArray();
 
     const friendList = friends.map((friend) => friend.friendId);
 
-    const orders = await db
-      .collection("orders")
-      .aggregate([
-        {
-          $match: {
-            user: { $in: friendList },
-          },
+    const orders = await db.collection('orders').aggregate([
+      {
+        $match: {
+          user: { $in: friendList },
         },
-        {
-          $lookup: {
-            from: "orderitems",
-            localField: "orderItems",
-            foreignField: "_id",
-            as: "orderItems",
-          },
+      },
+      {
+        $lookup: {
+          from: "users",
+          localField: "user",
+          foreignField: "_id",
+          as: "user",
         },
-        {
-          $lookup: {
-            from: "products",
-            localField: "orderItems.product",
-            foreignField: "_id",
-            as: "orderItems.product",
-          },
+      },
+      {
+        $sort: {
+          dateOrdered: -1,
         },
-        {
-          $lookup: {
-            from: "users",
-            localField: "user",
-            foreignField: "_id",
-            as: "user",
-          },
-        },
-        {
-          $lookup: {
-            from: "businesses",
-            localField: "business",
-            foreignField: "_id",
-            as: "business",
-          },
-        },
-        {
-          $sort: {
-            dateOrdered: -1,
-          },
-        },
-      ])
-      .toArray();
+      },
+      {
+        $project: {
+          user: { $arrayElemAt: ['$user', 0] },
+          orderItems: 1,
+          dateOrdered: 1,
+          likedBy: 1,
+          totalPrice: 1,
+          totalQuantity: 1
+        }
+      }
+    ])
+    .toArray();
 
     return {
       statusCode: 200,
-      body: orders,
+      body: orders
     };
+
   } catch (err) {
+
+    console.log(err);
     return {
       statusCode: 500,
       body: "An error occurred while collecting your friend's orders.",

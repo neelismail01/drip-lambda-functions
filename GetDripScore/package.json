@@ -9,6 +9,8 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "aws-sdk": "^2.1020.0",
+    "jsonwebtoken": "^8.5.1",
     "mongodb": "^4.1.3"
   }
 }

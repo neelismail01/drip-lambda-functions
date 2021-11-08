@@ -31,7 +31,7 @@ async function connectToDatabase() {
   mongodbUri = await getParams("connection-uri-mongodb");
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db("eshop-database");
+  const db = client.db("drip-beta-db");
 
   cachedDb = db;
   return db;
@@ -96,6 +96,7 @@ exports.handler = async (event, context) => {
 
   } catch (err) {
 
+    console.log(err);
     return {
       statusCode: 500,
       body: "An error occurred while liking/unliking your friend's order.",
