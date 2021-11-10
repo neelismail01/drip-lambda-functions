@@ -9,20 +9,6 @@ const ssm = new aws.SSM({
   region: "us-east-2",
 });
 
-const s3 = new aws.S3()
-
-const uploadImageToS3 = async (pictureBase64, pictureUri) => {
-    const uploadParams = {
-        Bucket: 'drip-inc',
-        Key: pictureUri,
-        Body: pictureBase64,
-        ContentEncoding: 'base64',
-        ContentType: 'image/jpeg'
-    }
-
-    return s3.upload(uploadParams).promise();
-}
-
 const getParams = async (param) => {
   const request = await ssm
     .getParameter({
@@ -45,10 +31,21 @@ async function connectToDatabase() {
   mongodbUri = await getParams("connection-uri-mongodb");
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db("eshop-database");
+  const db = client.db("drip-beta-db");
 
   cachedDb = db;
   return db;
+}
+
+const checkUserAuthorization = async (authToken, accessTokenSecret) => {
+  return new Promise((resolve, reject) => {
+      jwt.verify(authToken, accessTokenSecret, (err, userId) => {
+          if (err) {
+              reject("Invalid auth token");
+          }
+          resolve(userId);
+      })
+  })
 }
 
 exports.handler = async (event, context) => {
@@ -57,9 +54,8 @@ exports.handler = async (event, context) => {
     
     context.callbackWaitsForEmptyEventLoop = false;
 
-   /* const authHeader = event['params']['header']['Authorization'];
+    const authHeader = event['params']['header']['Authorization'];
     const authToken = authHeader && authHeader.split(" ")[1];
-    let userId = null;
 
     if (authToken === null) {
       return {
@@ -72,26 +68,30 @@ exports.handler = async (event, context) => {
       accessTokenSecret = await getParams('access-token-secret-jwt');
     }
 
-    jwt.verify(authToken, accessTokenSecret, (err, user) => {
-      if (err) {
-        return {
-          status: 403,
-          body: "You do not have a valid authorization token."
-        }
-      }
+    const userId = await checkUserAuthorization(authToken, accessTokenSecret);
+    const db = await connectToDatabase();
+    const pictureUrls = event['body-json']['pictureUrls'];
+    const tags = event['body-json']['tags'];
+    const brandName = event['body-json']['brandName'];
+    const brandLogo = event['body-json']['brandLogo'];
+    const brandWebsite = event['body-json']['brandWebsite'];
+    const caption = event['body-json']['caption'];
+    const datePosted = Date.now();
 
-      userId = user;
+    await db.collection('orders').insertOne({
+      user: ObjectId(userId),
+      pictureUrls,
+      tags,
+      brandName,
+      brandLogo,
+      brandWebsite,
+      caption,
+      datePosted
     })
 
-    const db = await connectToDatabase();
-    */
-
-    console.log(event);
-   await uploadImageToS3(event['body-json'].pictures[0].base64, event['body-json'].pictures[0].uri);
-  
     return {
       statusCode: 200,
-      body: "The image was uploaded."
+      body: "The post was successfully created."
     };
   
   } catch (err) {
@@ -99,7 +99,7 @@ exports.handler = async (event, context) => {
     console.log(err);
     return {
       statusCode: 500,
-      body: "An error occurred while accepting the friend request."
+      body: "An error occurred while creating this post."
     };
 
   }
