@@ -31,10 +31,21 @@ async function connectToDatabase() {
   mongodbUri = await getParams("connection-uri-mongodb");
   const client = await MongoClient.connect(mongodbUri);
 
-  const db = client.db("eshop-database");
+  const db = client.db("drip-beta-db");
 
   cachedDb = db;
   return db;
+}
+
+const checkUserAuthorization = async (authToken, accessTokenSecret) => {
+  return new Promise((resolve, reject) => {
+      jwt.verify(authToken, accessTokenSecret, (err, userId) => {
+          if (err) {
+              reject("Invalid auth token");
+          }
+          resolve(userId);
+      })
+  })
 }
 
 exports.handler = async (event, context) => {
@@ -45,31 +56,14 @@ exports.handler = async (event, context) => {
 
     const authHeader = event['params']['header']['Authorization'];
     const authToken = authHeader && authHeader.split(" ")[1];
-    let userId = null;
-
-    if (authToken === null) {
-      return {
-        status: 401,
-        body: "You do not have an authorization token."
-      }
-    }
 
     if (accessTokenSecret === null) {
       accessTokenSecret = await getParams('access-token-secret-jwt');
     }
 
-    jwt.verify(authToken, accessTokenSecret, (err, user) => {
-      if (err) {
-        return {
-          status: 403,
-          body: "You do not have a valid authorization token."
-        }
-      }
-
-      userId = user;
-    })
-
+    const userId = await checkUserAuthorization(authToken, accessTokenSecret);
     const db = await connectToDatabase();
+    
     const friendshipId = event['params']['path']['friendshipId'];
 
     const filter = {
