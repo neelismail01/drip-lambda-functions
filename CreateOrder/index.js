@@ -57,13 +57,6 @@ exports.handler = async (event, context) => {
     const authHeader = event['params']['header']['Authorization'];
     const authToken = authHeader && authHeader.split(" ")[1];
 
-    if (authToken === null) {
-      return {
-        status: 401,
-        body: "You do not have an authorization token."
-      }
-    }
-
     if (accessTokenSecret === null) {
       accessTokenSecret = await getParams('access-token-secret-jwt');
     }
@@ -76,7 +69,8 @@ exports.handler = async (event, context) => {
     const brandLogo = event['body-json']['brandLogo'];
     const brandWebsite = event['body-json']['brandWebsite'];
     const caption = event['body-json']['caption'];
-    const datePosted = Date.now();
+    const datePosted = new Date();
+    const likedBy = [];
 
     await db.collection('orders').insertOne({
       user: ObjectId(userId),
@@ -86,7 +80,8 @@ exports.handler = async (event, context) => {
       brandLogo,
       brandWebsite,
       caption,
-      datePosted
+      datePosted,
+      likedBy
     })
 
     return {
