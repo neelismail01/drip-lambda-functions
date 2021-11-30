@@ -1,0 +1,16 @@
+{
+  "name": "gettrendingbrands",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "^2.1039.0",
+    "jsonwebtoken": "^8.5.1",
+    "mongodb": "^4.2.0"
+  }
+}
