@@ -84,7 +84,9 @@ exports.handler = async (event, context) => {
         {
             $group: {
                 _id: '$brandName',
-                totalPosts: { $sum: 1 }
+                detail: { $first: '$$ROOT' },
+                totalPosts: { $sum: 1 },
+                totalLikes: { $sum: { $size: '$likedBy' } }
             }
         },
         {
@@ -92,6 +94,21 @@ exports.handler = async (event, context) => {
         },
         {
             $limit: 10
+        },
+        {
+            $replaceRoot: {
+              newRoot: { $mergeObjects: [{ totalPosts: '$totalPosts' }, { totalLikes: '$totalLikes' }, '$detail'] },
+            },
+        },
+        {
+            $project: {
+                _id: 1,
+                totalPosts: 1,
+                totalLikes: 1,
+                brandName: 1,
+                brandLogo: 1,
+                brandWebsite: 1
+            }
         }
     ])
     .toArray()
