@@ -136,6 +136,11 @@ exports.handler = async (event, context) => {
         }
       },
       {
+        $sort: {
+            datePosted: -1
+        }
+      },
+      {
         $skip: limit * page
       },
       {
@@ -148,11 +153,6 @@ exports.handler = async (event, context) => {
           foreignField: "_id",
           as: "user",
         },
-      },
-      {
-          $sort: {
-              datePosted: -1
-          }
       },
       {
         $project: {
