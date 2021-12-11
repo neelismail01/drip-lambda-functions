@@ -63,24 +63,28 @@ exports.handler = async (event, context) => {
 
     await checkUserAuthorization(authToken, accessTokenSecret);
     const db = await connectToDatabase();
-    const dateObj = new Date();
-    const prevMonth = (dateObj.getMonth() - 1) % 12 + 1;
-    const currMonth = dateObj.getMonth() + 1;
-    const day = String(dateObj.getDate()).padStart(2, '0');
-    const year = dateObj.getFullYear();
-    const dateRangeStart = `${year}-${prevMonth}-${day}`;
-    const dateRangeEnd = `${year}-${currMonth}-${day}`
 
+    /*
+      BELOW IS THE LOGIC FOR GETTING TRENDING BRANDS WITHIN A PARTICULAR TIME PERIOD
+      const dateObj = new Date();
+      const prevMonth = (dateObj.getMonth() - 1) % 12 + 1;
+      const currMonth = dateObj.getMonth() + 1;
+      const day = String(dateObj.getDate()).padStart(2, '0');
+      const year = dateObj.getFullYear();
+      const dateRangeStart = `${year}-${prevMonth}-${day}`;
+      const dateRangeEnd = `${year}-${currMonth}-${day}`
+
+      {
+        $match : {
+            "datePosted": {
+                $gte: new Date(dateRangeStart),
+                $lte: new Date(dateRangeEnd)
+            }
+        }
+      },
+    */
 
     const trendingBrands = await db.collection('orders').aggregate([
-        {
-            $match : {
-                "datePosted": {
-                    $gte: new Date(dateRangeStart),
-                    $lte: new Date(dateRangeEnd)
-                }
-            }
-        },
         {
             $group: {
                 _id: '$brandName',
@@ -90,7 +94,7 @@ exports.handler = async (event, context) => {
             }
         },
         {
-            $sort: { totalPosts: -1 }
+            $sort: { totalLikes: -1 }
         },
         {
             $limit: 10
